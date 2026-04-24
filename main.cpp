@@ -87,7 +87,7 @@ bool is_valid_id(const string &s, size_t max_len) {
 }
 
 bool is_valid_string_param(const string &s, size_t max_len) {
-    if (s.empty() || s.length() > max_len) return false;
+    if (s.length() > max_len) return false;
     for (char c : s) if ((unsigned char)c < 33 || (unsigned char)c > 126) return false;
     return true;
 }
@@ -112,7 +112,7 @@ void show_finance(int count = -1) {
     finance_storage.get_info(total_records, 0);
     if (count == -1) count = total_records;
     if (count == 0) {
-        cout << endl;
+        cout << fixed << setprecision(2) << "+ 0.00 - 0.00" << endl;
         return;
     }
     if (count > total_records || count < 0) {
@@ -260,12 +260,34 @@ void handle_command(string line) {
         account_index.remove(ID(userID), pos_vec[0]);
     } else if (cmd == "show") {
         if (get_current_privilege() < 1) { print_invalid(); return; }
+        string rem;
+        getline(ss, rem);
+        if (rem.empty() || rem.find_first_not_of(' ') == string::npos) {
+            auto results = book_isbn_index.get_all();
+            set<pair<ISBN, int>> sorted_results;
+            for (int pos : results) {
+                Book b;
+                book_storage.read(b, pos);
+                sorted_results.insert({b.isbn, pos});
+            }
+            if (sorted_results.empty()) cout << endl;
+            else {
+                for (auto &p : sorted_results) {
+                    Book b;
+                    book_storage.read(b, p.second);
+                    print_book(b);
+                }
+            }
+            return;
+        }
+
+        stringstream rss(rem);
         string arg;
-        ss >> arg;
+        rss >> arg;
         if (arg == "finance") {
             if (get_current_privilege() < 7) { print_invalid(); return; }
             string count_str;
-            if (ss >> count_str) {
+            if (rss >> count_str) {
                 try {
                     int count = stoi(count_str);
                     show_finance(count);
@@ -273,35 +295,38 @@ void handle_command(string line) {
             } else show_finance();
         } else {
             vector<int> results;
-            if (arg.empty()) {
-                results = book_isbn_index.get_all();
-            } else {
-                size_t eq = arg.find('=');
-                if (eq == string::npos) { print_invalid(); return; }
-                string key = arg.substr(0, eq);
-                string val_with_quotes = line.substr(line.find('=') + 1);
-                // Simple trimming of spaces at end
-                val_with_quotes.erase(val_with_quotes.find_last_not_of(" ") + 1);
-
-                string val;
-                if (key == "-ISBN") {
-                    val = val_with_quotes;
-                    if (!is_valid_string_param(val, 20)) { print_invalid(); return; }
-                    results = book_isbn_index.find(ISBN(val));
-                } else if (key == "-name") {
-                    val = extract_quoted(val_with_quotes);
-                    if (!is_valid_string_param(val, 60)) { print_invalid(); return; }
-                    results = book_name_index.find(Name(val));
-                } else if (key == "-author") {
-                    val = extract_quoted(val_with_quotes);
-                    if (!is_valid_string_param(val, 60)) { print_invalid(); return; }
-                    results = book_author_index.find(Author(val));
-                } else if (key == "-keyword") {
-                    val = extract_quoted(val_with_quotes);
-                    if (!is_valid_string_param(val, 60) || val.find('|') != string::npos) { print_invalid(); return; }
-                    results = book_keyword_index.find(Keyword(val));
-                } else { print_invalid(); return; }
+            size_t eq = arg.find('=');
+            if (eq == string::npos) { print_invalid(); return; }
+            string key = arg.substr(0, eq);
+            string val_with_quotes = arg.substr(eq + 1);
+            if (val_with_quotes.empty()) { print_invalid(); return; }
+            if (val_with_quotes.front() == '"') {
+                while (val_with_quotes.back() != '"') {
+                    string next;
+                    if (!(rss >> next)) break;
+                    val_with_quotes += " " + next;
+                }
             }
+
+            string val;
+            if (key == "-ISBN") {
+                val = val_with_quotes;
+                if (!is_valid_string_param(val, 20)) { print_invalid(); return; }
+                results = book_isbn_index.find(ISBN(val));
+            } else if (key == "-name") {
+                val = extract_quoted(val_with_quotes);
+                if (!is_valid_string_param(val, 60)) { print_invalid(); return; }
+                results = book_name_index.find(Name(val));
+            } else if (key == "-author") {
+                val = extract_quoted(val_with_quotes);
+                if (!is_valid_string_param(val, 60)) { print_invalid(); return; }
+                results = book_author_index.find(Author(val));
+            } else if (key == "-keyword") {
+                val = extract_quoted(val_with_quotes);
+                if (!is_valid_string_param(val, 60) || val.find('|') != string::npos) { print_invalid(); return; }
+                results = book_keyword_index.find(Keyword(val));
+            } else { print_invalid(); return; }
+
             set<pair<ISBN, int>> sorted_results;
             for (int pos : results) {
                 Book b;
@@ -363,6 +388,7 @@ void handle_command(string line) {
             if (eq == string::npos) { print_invalid(); return; }
             string key = arg.substr(0, eq);
             string val = arg.substr(eq + 1);
+            if (val.empty()) { print_invalid(); return; }
             if (val.front() == '"') {
                 while (val.back() != '"') {
                     string next;
